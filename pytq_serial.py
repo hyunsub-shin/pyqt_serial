@@ -63,7 +63,13 @@ class WindowClass(QMainWindow, from_class):
         data = self.textEdit_tx.toPlainText()
         ## for debug -- print data
         print(data)
+        ## Serial data Write
         self.seri.write(bytes(data, encoding='ascii'))
+        
+        ## for RX Test
+        rx_data = self.seri.readline().rstrip(b'\r')
+        print("rx data--", rx_data.decode()[:len(rx_data)])
+        self.textEdit_rx.setText(rx_data.decode()[:len(rx_data)])
 
 
 app = QApplication(sys.argv)
