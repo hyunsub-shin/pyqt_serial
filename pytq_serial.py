@@ -1,78 +1,143 @@
-import sys #, UI
-from PyQt5.QtWidgets import *
-from PyQt5 import uic
+from PyQt5 import QtWidgets, uic
+from PyQt5.QtSerialPort import QSerialPort, QSerialPortInfo
+from PyQt5.QtCore import QIODevice, QTimer
 
-import serial
-import serial.tools.list_ports as sp
 
-from_class = uic.loadUiType("comport.ui")[0]
+app = QtWidgets.QApplication([])
+ui = uic.loadUi("comport.ui")
+ui.setWindowTitle("PyQt5 Serial Test")
 
-class WindowClass(QMainWindow, from_class):
-    def __init__(self):
-        super().__init__()
-        self.setupUi(self)
-        self.setWindowTitle("Puture Hansub")
-        ## variables
-        self.connection = False
 
-        ## pushButton func
-        self.pushButton_search.clicked.connect(self.serch_comport)
-        self.pushButton_connect.clicked.connect(self.comport_connect)
-        self.pushButton_disconnect.clicked.connect(self.comport_disconnect)
-        self.pushButton_send.clicked.connect(self.tx_send)
+## Used Serial port
+serial = QSerialPort()
+## Used Timer
+timer = QTimer()
+
+
+###############
+## variables ##
+###############
+connection_state = None
+baudrate = 115200
+
+
+###############
+## Fucntions ##
+###############
+## COM port listing
+def search_comport():
+    comport_list = []
+    list = QSerialPortInfo().availablePorts()
+
+    ## combobox list 중복추가 방지
+    ui.comboBox_comlist.clear()
+
+    for i in list:
+        comport_list.append(i.portName())
         
-    ## com port searching and list func
-    def serch_comport(self):
-        list = sp.comports()
-        comport_list = []
+    # add comport list to combobox
+    ui.comboBox_comlist.addItems(comport_list)
+    # for debug
+    print("COM port List: " + str(comport_list))
 
-        ## combobox list 중복추가 방지
-        self.comboBox_comlist.clear()
+## COM port open
+def comport_connect():
+    try:
+        ## com port connect to selected list # MS-Windows
+        global baudrate
+        serial.setBaudRate(baudrate)
+        serial.setPortName(ui.comboBox_comlist.currentText())
+        ## for Debug
+        print("baudrate : ", baudrate)
 
-        for i in list:
-            comport_list.append(i.device)
+        global connection_state # Used global variable
+        if connection_state == True: 
+            ui.status_label2.setText("comport already connect")
+            ## for debug
+            print("comport already connect")  
+            ## timer start
+            timer.setInterval(3000)
+            timer.start()
+        else:
+            connection_state = serial.open(QIODevice.ReadWrite)  
+            if connection_state:
+                ui.status_label1.setText("Connect")
+                ## for debug
+                print("connect", ui.comboBox_comlist.currentText(), connection_state, serial)
+                                          
+    except Exception as e:
+        print(e)
 
-        ## for debug -- print list
-        print("COM port List: " + str(comport_list))
-        ## com port list add to combobox
-        self.comboBox_comlist.addItems(comport_list)
+## COM port close
+def comport_disconnect(self):
+    ## disconnect com port
+    global connection_state # Used global variable
+    connection_state = serial.close()    
+    
+    ui.status_label1.setText("Disconnect")
+    ui.status_label2.setText("-")    
+    ## for debug
+    print("disconnect", ui.comboBox_comlist.currentText(), connection_state, serial)
 
-    ## com port connection func
-    def comport_connect(self):
-        try:
-            ## com port connect to selected list # MS-Windows
-            self.seri = serial.Serial(self.comboBox_comlist.currentText(), 115200, timeout=1)
-            self.connection = True
-            ## for debug -- print return value
-            print("connect", self.comboBox_comlist.currentText(), self.connection, self.seri)
-        except Exception as e:
-            print(e)
+## serial trasmmit
+def tx_send():
+    global connection_state # Used global variable
+    if connection_state == True:        
+        data = ui.textEdit_tx.toPlainText()
+        # data = ui.lineEdit_tx.text()
+        data += '\r'
+        print(data)
 
-    ## com port disconnection func
-    def comport_disconnect(self):
-        ## disconnect com port
-        self.seri.close()
-        self.connection = False
-        ## for debug
-        print("disconnect", self.comboBox_comlist.currentText(), self.connection, self.seri)
+        ## Serial data Write
+        serial.write(str(data).encode())#, encoding='ascii'))
+        # serial.writeData(bytes(data, encoding='ascii'))
 
-    ## TX button func
-    def tx_send(self):
+        # ui.textEdit_tx.clear()
+        
         ## for debug
         print("tx send")
-        data = self.textEdit_tx.toPlainText()
-        ## for debug -- print data
-        print(data)
-        ## Serial data Write
-        self.seri.write(bytes(data, encoding='ascii'))
-        
-        ## for RX Test
-        rx_data = self.seri.readline().rstrip(b'\r')
-        print("rx data--", rx_data.decode()[:len(rx_data)])
-        self.textEdit_rx.setText(rx_data.decode()[:len(rx_data)])
+        print(bytes(data, encoding='ascii'))        
+    else:
+        ui.status_label2.setText("comport Not open!!!")
+        ## for debug
+        print("comport Not open!!!")
+        ## timer start
+        timer.setInterval(3000)
+        timer.start()
+
+## serial receive
+def rx_rcv():
+    # rx = serial.readLine()
+    rx = serial.readAll()
+    ui.textEdit_rx.insertPlainText(str(rx, 'utf-8', 'replace'))
+    # ui.textEdit_rx.setText(rx_data.decode()[:len(rx_data)])
+    # ui.textEdit_rx.append("{}".format(rx))
+
+    ## for Debug
+    rx_data = str(rx, 'utf-8')#.rstrip(b'\r')#.strip()#
+    print("rx_data--\n", rx_data)
+
+## receive view clear
+def rx_clear():
+    ui.textEdit_rx.clear()
+
+## if timeout, timer stop
+def timeout():
+    ui.status_label2.setText("-")
+    timer.stop()
 
 
-app = QApplication(sys.argv)
-mainWindow = WindowClass()
-mainWindow.show()
+###################
+## Event connect ##
+###################
+timer.timeout.connect(timeout)
+serial.readyRead.connect(rx_rcv)
+ui.pushButton_search.clicked.connect(search_comport)
+ui.pushButton_connect.clicked.connect(comport_connect)
+ui.pushButton_disconnect.clicked.connect(comport_disconnect)
+ui.pushButton_send.clicked.connect(tx_send)
+ui.pushButton_clear.clicked.connect(rx_clear)
+
+
+ui.show()
 app.exec()
